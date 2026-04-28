@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>医美幸运大转盘</title>
+
+<style>
+body{
+    margin:0;
+    /* 本地背景图，服务器/本地都能用 */
+    background: url("./bg.jpg") no-repeat center;
+    background-size: cover;
+    background-attachment: fixed;
+    font-family:Arial;
+    text-align:center;
+    position: relative; /* 必须加 */
+    z-index: -1; /* 👈 这一行让背景变成最底层！*/
+
+}
+
+.container{
+    margin-top:40px;
+}
+
+.wheel-wrapper{
+    position:relative;
+    width:320px;
+    height:320px;
+    margin:40px auto;
+}
+
+.pointer{
+    position:absolute;
+    top:-10px;
+    left:50%;
+    transform:translateX(-50%);
+    width:0;
+    height:0;
+    border-left:15px solid transparent;
+    border-right:15px solid transparent;
+    border-bottom:30px solid red;
+    z-index:20;
+}
+
+#wheelCanvas{
+    width:100%;
+    height:100%;
+    border-radius:50%;
+    border:6px solid #ffd700;
+    transition:transform 4s cubic-bezier(0.25,0.1,0.25,1);
+}
+
+.center-btn{
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    width:80px;
+    height:80px;
+    border-radius:50%;
+    background:#ff4444;
+    color:#fff;
+    line-height:80px;
+    font-weight:bold;
+    z-index:30;
+    cursor:pointer;
+}
+.center-btn.disabled{
+    background:#999;
+    cursor:not-allowed;
+}
+
+.popup{
+    position:fixed;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    background:rgba(0,0,0,0.7);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:9999;
+}
+.popup-box{
+    background:linear-gradient(135deg,#fffbe6,#ffe58f);
+    padding:20px;
+    border-radius:12px;
+    border:2px solid #ffd700;
+    box-shadow:0 6px 15px rgba(0,0,0,0.2);
+}
+
+.admin-entry{
+    position:fixed;
+    bottom:10px;
+    right:10px;
+    color:#fff;
+    font-size:12px;
+    text-decoration:underline;
+    cursor:pointer;
+    display:none;
+}
+.admin-popup{
+    position:fixed;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    background:rgba(0,0,0,0.8);
+    display:none;
+    align-items:center;
+}
+.admin-box{
+    background:#fff;
+    padding:20px;
+    max-height:80vh;
+    overflow:auto;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+    <h2 style="color:#fff;">医美幸运大转盘</h2>
+
+    <div class="wheel-wrapper">
+        <div class="pointer"></div>
+        <canvas id="wheelCanvas" width="300" height="300"></canvas>
+        <div class="center-btn" id="startBtn">抽奖</div>
+    </div>
+</div>
+
+<!-- 弹窗 -->
+<div class="popup" id="popup">
+    <div class="popup-box">
+        <h3 id="result"></h3>
+ 	<button onclick="closePop()" style="background:#ffd700;color:#fff;border:none;padding:8px 20px;border-radius:6px;">确定</button>
+    </div>
+</div>
+
+<!-- 后台 -->
+<div class="admin-entry" onclick="openAdmin()">后台记录</div>
+
+<div class="admin-popup" id="adminPopup">
+    <div class="admin-box">
+        <div id="recordList"></div>
+        <button onclick="closeAdmin()">关闭</button>
+    </div>
+</div>
+
+<script>
+
+// ⭐⭐⭐ 开发模式开关
+const DEV_MODE = false; 
+
+// ===== 奖项 =====
+const prizeList = [
+    {name:"一等奖", color:"#ff4d4f"},
+    {name:"二等奖", color:"#ffa940"},
+    {name:"三等奖", color:"#36cfc9"},
+    {name:"四等奖", color:"#9254de"},
+    {name:"五等奖", color:"#73d13d"}
+];
+
+const canvas = document.getElementById("wheelCanvas");
+const ctx = canvas.getContext("2d");
+
+let isRun = false;
+const startBtn = document.getElementById("startBtn");
+
+// ===== 抽奖限制 =====
+function hasDraw(){
+    if(DEV_MODE) return false;
+    return localStorage.getItem("lottery") === "true";
+}
+
+function markDraw(){
+    if(DEV_MODE) return;
+    localStorage.setItem("lottery","true");
+    startBtn.innerText="已抽";
+    startBtn.classList.add("disabled");
+}
+
+// 初始化状态
+if(hasDraw()){
+    markDraw();
+}
+
+// ===== 绘制等分转盘 + 正常文字 =====
+function draw(){
+    const r = 150;
+    const angle = 2*Math.PI / prizeList.length;
+
+    for(let i=0;i<prizeList.length;i++){
+        ctx.beginPath();
+        ctx.moveTo(r,r);
+        ctx.arc(r,r,r,angle*i,angle*(i+1));
+        ctx.fillStyle = prizeList[i].color;
+        ctx.fill();
+
+        // 扇形分割白线
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.save();
+        ctx.translate(r,r);
+        ctx.rotate(angle*i + angle/2);
+
+        ctx.fillStyle="#fff";
+        ctx.font="bold 16px Arial";
+        ctx.textAlign="center";
+        ctx.fillText(prizeList[i].name, 90, 6);
+
+        ctx.restore();
+    }
+}
+draw();
+
+// ===== 抽奖 固定5圈 必中一等奖 指针精准指向 =====
+startBtn.onclick = function(){
+    if(isRun || hasDraw()) return;
+    isRun = true;
+
+    const targetRotate = 360 * 5 + 216;
+    canvas.style.transform = `rotate(${targetRotate}deg)`;
+
+    setTimeout(()=>{
+        isRun = false;
+        markDraw();
+        saveRecord("一等奖");
+        show("恭喜获得：一等奖");
+    },4000);
+};
+
+// ===== 记录 =====
+function saveRecord(prize){
+    let list = JSON.parse(localStorage.getItem("records")||"[]");
+    list.push({
+        time:new Date().toLocaleString(),
+        prize
+    });
+    localStorage.setItem("records",JSON.stringify(list));
+}
+
+// ===== 弹窗 =====
+function show(text){
+    document.getElementById("result").innerText=text;
+    document.getElementById("popup").style.display="flex";
+}
+function closePop(){
+    document.getElementById("popup").style.display="none";
+}
+
+// ===== 后台 =====
+function openAdmin(){
+    let list = JSON.parse(localStorage.getItem("records")||"[]");
+    let html = "";
+    list.forEach((item,i)=>{
+        html += `<div>${i+1}. ${item.time} - ${item.prize}</div>`;
+    });
+    document.getElementById("recordList").innerHTML = html || "暂无记录";
+    document.getElementById("adminPopup").style.display="flex";
+}
+function closeAdmin(){
+    document.getElementById("adminPopup").style.display="none";
+}
+
+</script>
+
+</body>
+</html>
